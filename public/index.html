@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xvitz - Magical Content Creator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57);
+            animation: rainbow 3s ease-in-out infinite;
+        }
+
+        @keyframes rainbow {
+            0%, 100% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+        }
+
+        .category-selector {
+            margin-bottom: 30px;
+        }
+
+        .category-label {
+            display: block;
+            margin-bottom: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .category-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .category-btn {
+            padding: 12px 20px;
+            border: 2px solid #667eea;
+            background: transparent;
+            color: #667eea;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .category-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .category-btn.active {
+            background: #667eea;
+            color: white;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .custom-prompt {
+            margin-bottom: 30px;
+        }
+
+        .prompt-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .prompt-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 150px;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            box-shadow: 0 5px 15px rgba(78, 205, 196, 0.4);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(78, 205, 196, 0.6);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .result-section {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+
+        .result-section.show {
+            display: block;
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .generated-content {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #e1e5e9;
+            font-size: 1rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .status {
+            padding: 10px 15px;
+            border-radius: 25px;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.loading {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .memory-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: #1976d2;
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e1e5e9;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+            
+            .category-buttons {
+                flex-direction: column;
+            }
+            
+            .category-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <i class="fas fa-magic"></i> Xvitz
+            </div>
+            <p class="subtitle">Magical AI Content Creator for X (Twitter)</p>
+        </div>
+
+        <div class="category-selector">
+            <label class="category-label">Choose Content Category:</label>
+            <div class="category-buttons">
+                <button class="category-btn active" data-category="random">
+                    <i class="fas fa-random"></i> Random
+                </button>
+                <button class="category-btn" data-category="creative">
+                    <i class="fas fa-palette"></i> Creative
+                </button>
+                <button class="category-btn" data-category="writing">
+                    <i class="fas fa-pen-fancy"></i> Writing
+                </button>
+                <button class="category-btn" data-category="moscownpur">
+                    <i class="fas fa-castle"></i> Moscownpur
+                </button>
+            </div>
+        </div>
+
+        <div class="custom-prompt">
+            <label class="category-label">Or Write Your Own Prompt:</label>
+            <textarea 
+                class="prompt-input" 
+                placeholder="Enter your custom prompt here... (optional)"
+                rows="3"
+            ></textarea>
+        </div>
+
+        <div class="action-buttons">
+            <button class="btn btn-secondary" id="generateBtn">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                Generate Content
+            </button>
+            <button class="btn btn-primary" id="autoTweetBtn">
+                <i class="fab fa-twitter"></i>
+                Auto Post to X
+            </button>
+        </div>
+
+        <div class="result-section" id="resultSection">
+            <div class="status" id="status"></div>
+            <div class="generated-content" id="generatedContent"></div>
+            <div class="memory-info" id="memoryInfo"></div>
+        </div>
+
+        <div class="footer">
+            <p>Powered by <a href="https://www.moscownpur.in" target="_blank">Moscownpur</a> | 
+            Created with <i class="fas fa-heart" style="color: #ff6b6b;"></i> and AI Magic</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5174';
+        let selectedCategory = 'random';
+
+        // Category selection
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedCategory = btn.dataset.category;
+            });
+        });
+
+        // Generate content
+        document.getElementById('generateBtn').addEventListener('click', async () => {
+            const customPrompt = document.querySelector('.prompt-input').value.trim();
+            await generateContent(customPrompt);
+        });
+
+        // Auto post to X
+        document.getElementById('autoTweetBtn').addEventListener('click', async () => {
+            const customPrompt = document.querySelector('.prompt-input').value.trim();
+            await autoTweet(customPrompt);
+        });
+
+        async function generateContent(customPrompt = '') {
+            const generateBtn = document.getElementById('generateBtn');
+            const status = document.getElementById('status');
+            const resultSection = document.getElementById('resultSection');
+
+            try {
+                // Show loading state
+                generateBtn.disabled = true;
+                generateBtn.innerHTML = '<div class="loading-spinner"></div> Generating...';
+                status.className = 'status loading';
+                status.innerHTML = '<div class="loading-spinner"></div> Xvitz is creating magical content...';
+                resultSection.classList.add('show');
+
+                // Build URL
+                const url = new URL(`${API_BASE}/generate`);
+                if (customPrompt) {
+                    url.searchParams.set('prompt', customPrompt);
+                } else {
+                    url.searchParams.set('category', selectedCategory);
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    status.className = 'status success';
+                    status.innerHTML = '<i class="fas fa-check-circle"></i> Content generated successfully!';
+                    
+                    document.getElementById('generatedContent').textContent = data.generatedContent;
+                    document.getElementById('memoryInfo').innerHTML = 
+                        `<i class="fas fa-brain"></i> Xvitz Memory: ${data.xvitzMemory} entries | 
+                         Category: ${data.category} | Prompt: "${data.prompt}"`;
+                } else {
+                    throw new Error(data.error || 'Failed to generate content');
+                }
+
+            } catch (error) {
+                status.className = 'status error';
+                status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Error: ${error.message}`;
+                document.getElementById('generatedContent').textContent = '';
+                document.getElementById('memoryInfo').textContent = '';
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Generate Content';
+            }
+        }
+
+        async function autoTweet(customPrompt = '') {
+            const autoTweetBtn = document.getElementById('autoTweetBtn');
+            const status = document.getElementById('status');
+            const resultSection = document.getElementById('resultSection');
+
+            try {
+                // Show loading state
+                autoTweetBtn.disabled = true;
+                autoTweetBtn.innerHTML = '<div class="loading-spinner"></div> Creating & Posting...';
+                status.className = 'status loading';
+                status.innerHTML = '<div class="loading-spinner"></div> Xvitz is creating and posting to X...';
+                resultSection.classList.add('show');
+
+                // Build URL
+                const url = new URL(`${API_BASE}/auto-tweet`);
+                if (customPrompt) {
+                    url.searchParams.set('prompt', customPrompt);
+                } else {
+                    url.searchParams.set('category', selectedCategory);
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    status.className = 'status success';
+                    status.innerHTML = `<i class="fas fa-check-circle"></i> Tweet posted successfully! Tweet ID: ${data.tweet.data.id}`;
+                    
+                    document.getElementById('generatedContent').textContent = data.generatedContent;
+                    document.getElementById('memoryInfo').innerHTML = 
+                        `<i class="fas fa-brain"></i> Xvitz Memory: ${data.xvitzMemory} entries | 
+                         Category: ${data.category} | Prompt: "${data.prompt}"`;
+                } else {
+                    throw new Error(data.error || 'Failed to post tweet');
+                }
+
+            } catch (error) {
+                status.className = 'status error';
+                status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Error: ${error.message}`;
+                document.getElementById('generatedContent').textContent = '';
+                document.getElementById('memoryInfo').textContent = '';
+            } finally {
+                autoTweetBtn.disabled = false;
+                autoTweetBtn.innerHTML = '<i class="fab fa-twitter"></i> Auto Post to X';
+            }
+        }
+
+        // Add some magical effects
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add sparkle effect to buttons on hover
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.transform = 'translateY(-3px) scale(1.02)';
+                });
+                
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.transform = 'translateY(0) scale(1)';
+                });
+            });
+
+            // Add typing effect to placeholder
+            const promptInput = document.querySelector('.prompt-input');
+            const placeholders = [
+                "Create a viral tweet about the magic of storytelling...",
+                "Write about the wonders of Moscownpur...",
+                "Generate content about worldbuilding and imagination...",
+                "Tell me about your favorite magical creature..."
+            ];
+            
+            let placeholderIndex = 0;
+            setInterval(() => {
+                promptInput.placeholder = placeholders[placeholderIndex];
+                placeholderIndex = (placeholderIndex + 1) % placeholders.length;
+            }, 3000);
+        });
+    </script>
+</body>
+</html>
