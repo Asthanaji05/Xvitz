@@ -120,11 +120,16 @@ Keep it concise but vivid and engaging.`;
 }
 
 // Character Dialogue Generation
-async function generateCharacterDialogue(character, context, phase, turnNumber) {
+async function generateCharacterDialogue(character, context, phase, turnNumber, characters) {
   try {
     const client = character === 'Char1' ? groqClients.char1 : groqClients.char2;
+    const charInfo = character === 'Char1' ? characters.char1 : characters.char2;
     
-    const systemPrompt = `You are ${character}, a character in an ongoing story. 
+    const systemPrompt = `You are ${charInfo.name}, a character in an ongoing story. 
+
+CHARACTER PROFILE:
+${charInfo.personality}
+
 Current phase: ${phase}
 Turn number: ${turnNumber}
 
@@ -134,7 +139,7 @@ Keep your response engaging and move the story forward naturally.`;
     const completion = await client.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Story context: ${context}\n\nWhat does ${character} say next?` }
+        { role: "user", content: `Story context: ${context}\n\nWhat does ${charInfo.name} say next?` }
       ],
       model: MODEL_CONFIG.model,
       temperature: MODEL_CONFIG.temperature,
@@ -338,13 +343,17 @@ app.post('/api/plan', async (req, res) => {
   }
 });
 
-// API Endpoint: Story Generation
+// Store for active story generation sessions
+const activeSessions = new Map();
+
+// API Endpoint: Story Generation (Streaming)
 app.post('/api/generate-story', async (req, res) => {
   try {
     const { 
       refinedPrompt, 
       openingScene, 
       phasePlan, 
+      characters,
       totalUtterances = 20, 
       summaryInterval = 4 
     } = req.body;
@@ -352,6 +361,10 @@ app.post('/api/generate-story', async (req, res) => {
     if (!refinedPrompt || !openingScene || !phasePlan) {
       return res.status(400).json({ error: 'refinedPrompt, openingScene, and phasePlan are required' });
     }
+
+    // Create session ID
+    const sessionId = Date.now().toString();
+    activeSessions.set(sessionId, { status: 'starting' });
 
     console.log('🎭 Kahovitz: Generating story...');
     console.log(`📊 Total utterances: ${totalUtterances}, Summary interval: ${summaryInterval}`);
@@ -373,6 +386,13 @@ app.post('/api/generate-story', async (req, res) => {
     for (let turn = 1; turn <= totalUtterances; turn++) {
       console.log(`🔄 Turn ${turn}/${totalUtterances}`);
       
+      // Update session status
+      activeSessions.set(sessionId, { 
+        status: 'generating', 
+        progress: (turn / totalUtterances) * 100,
+        message: `Generating turn ${turn}/${totalUtterances}`
+      });
+      
       // Determine current phase
       const currentPhase = getCurrentPhase(phasePlan, totalUtterances, turn);
       
@@ -380,18 +400,19 @@ app.post('/api/generate-story', async (req, res) => {
       const nextSpeaker = lastSpeaker === 'Char1' ? 'Char2' : 'Char1';
       
       // Generate character dialogue
-      const dialogue = await generateCharacterDialogue(nextSpeaker, currentContext, currentPhase.name, turn);
+      const dialogue = await generateCharacterDialogue(nextSpeaker, currentContext, currentPhase.name, turn, characters);
       
       // Store conversation
+      const charName = nextSpeaker === 'Char1' ? characters.char1.name : characters.char2.name;
       storyData.conversations.push({
-        speaker: nextSpeaker,
+        speaker: charName,
         text: dialogue,
         turn: turn,
         phase: currentPhase.name
       });
       
       // Update context
-      currentContext += `\n${nextSpeaker}: ${dialogue}`;
+      currentContext += `\n${charName}: ${dialogue}`;
       lastSpeaker = nextSpeaker;
       
       // Summarize at intervals
@@ -426,6 +447,12 @@ app.post('/api/generate-story', async (req, res) => {
     
     // Generate master summary
     console.log('📚 Generating master summary...');
+    activeSessions.set(sessionId, { 
+      status: 'summarizing', 
+      progress: 95,
+      message: 'Generating master summary...'
+    });
+    
     const allSummaries = storyData.summaries.map(s => s.summary);
     storyData.masterSummary = await generateMasterSummary(allSummaries);
     
@@ -434,15 +461,73 @@ app.post('/api/generate-story', async (req, res) => {
     
     console.log('✅ Story generation completed successfully');
     
-    res.json({
-      data: storyData,
-      markdown: markdown
+    // Store final result
+    activeSessions.set(sessionId, { 
+      status: 'complete', 
+      progress: 100,
+      message: 'Story generation complete!',
+      story: { data: storyData, markdown: markdown }
     });
+    
+    res.json({ sessionId, status: 'started' });
     
   } catch (error) {
     console.error('❌ Error in /api/generate-story:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// API Endpoint: Story Generation Stream
+app.get('/api/generate-story-stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control'
+  });
+
+  const sessionId = req.query.sessionId;
+  if (!sessionId) {
+    res.write(`data: ${JSON.stringify({ error: 'No session ID provided' })}\n\n`);
+    res.end();
+    return;
+  }
+
+  const checkSession = () => {
+    const session = activeSessions.get(sessionId);
+    if (!session) {
+      res.write(`data: ${JSON.stringify({ error: 'Session not found' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    if (session.status === 'complete') {
+      res.write(`data: ${JSON.stringify({ type: 'complete', story: session.story })}\n\n`);
+      activeSessions.delete(sessionId);
+      res.end();
+      return;
+    }
+
+    // Send progress update
+    res.write(`data: ${JSON.stringify({ 
+      type: 'progress', 
+      percentage: session.progress, 
+      message: session.message 
+    })}\n\n`);
+
+    // Check again in 1 second
+    setTimeout(checkSession, 1000);
+  };
+
+  checkSession();
+
+  req.on('close', () => {
+    // Clean up if client disconnects
+    if (activeSessions.has(sessionId)) {
+      activeSessions.delete(sessionId);
+    }
+  });
 });
 
 // Health check endpoint
@@ -466,38 +551,220 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Kahovitz Story Pipeline v2</title>
+        <title>🎭 Kahovitz Story Pipeline v2</title>
         <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            .container { background: #f5f5f5; padding: 20px; border-radius: 8px; }
-            button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
-            textarea { width: 100%; height: 100px; margin: 10px 0; }
-            .result { background: white; padding: 15px; border-radius: 4px; margin-top: 20px; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container { 
+                max-width: 1200px; 
+                margin: 0 auto; 
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+                padding: 30px;
+            }
+            h1 { 
+                text-align: center; 
+                margin-bottom: 30px; 
+                color: #333;
+                font-size: 2.5rem;
+            }
+            .section { 
+                background: #f8f9fa; 
+                padding: 20px; 
+                border-radius: 12px; 
+                margin-bottom: 20px;
+                border-left: 4px solid #667eea;
+            }
+            .section h2 { 
+                color: #333; 
+                margin-bottom: 15px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            button { 
+                background: linear-gradient(45deg, #667eea, #764ba2); 
+                color: white; 
+                border: none; 
+                padding: 12px 24px; 
+                border-radius: 8px; 
+                cursor: pointer; 
+                font-weight: 600;
+                transition: all 0.3s ease;
+                margin: 5px;
+            }
+            button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+            button:disabled { opacity: 0.6; cursor: not-allowed; }
+            textarea, input { 
+                width: 100%; 
+                padding: 12px; 
+                border: 2px solid #e9ecef; 
+                border-radius: 8px; 
+                font-family: inherit;
+                margin: 10px 0;
+                transition: border-color 0.3s ease;
+            }
+            textarea:focus, input:focus { 
+                outline: none; 
+                border-color: #667eea; 
+            }
+            .result { 
+                background: white; 
+                padding: 20px; 
+                border-radius: 12px; 
+                margin-top: 15px;
+                border: 1px solid #e9ecef;
+            }
+            .character-config {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+                margin: 15px 0;
+            }
+            .character-box {
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #e9ecef;
+            }
+            .phase-editor {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin: 15px 0;
+            }
+            .phase-box {
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #e9ecef;
+            }
+            .live-updates {
+                max-height: 400px;
+                overflow-y: auto;
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 8px;
+                border: 1px solid #e9ecef;
+            }
+            .update-item {
+                background: white;
+                padding: 10px;
+                margin: 5px 0;
+                border-radius: 6px;
+                border-left: 3px solid #667eea;
+            }
+            .progress-bar {
+                width: 100%;
+                height: 8px;
+                background: #e9ecef;
+                border-radius: 4px;
+                overflow: hidden;
+                margin: 10px 0;
+            }
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(45deg, #667eea, #764ba2);
+                transition: width 0.3s ease;
+            }
+            .loading { display: none; }
+            .loading.show { display: block; }
+            .icon { font-size: 1.2em; }
         </style>
     </head>
     <body>
-        <h1>🎭 Kahovitz Story Pipeline v2</h1>
         <div class="container">
-            <h2>Step 1: Plan Your Story</h2>
-            <textarea id="roughIdea" placeholder="Enter your rough story idea..."></textarea>
-            <button onclick="planStory()">Generate Plan</button>
+            <h1>🎭 Kahovitz Story Pipeline v2</h1>
             
-            <div id="planResult" class="result" style="display: none;">
-                <h3>Generated Plan</h3>
-                <div id="planContent"></div>
-                <button onclick="generateStory()">Generate Full Story</button>
+            <!-- Step 1: Story Idea -->
+            <div class="section">
+                <h2>📝 Step 1: Your Story Idea</h2>
+                <textarea id="roughIdea" placeholder="Enter your rough story idea... (e.g., A fantasy adventure about a knight and a rogue)" rows="3"></textarea>
+                <button onclick="planStory()">🚀 Generate Plan</button>
             </div>
             
-            <div id="storyResult" class="result" style="display: none;">
-                <h3>Generated Story</h3>
-                <div id="storyContent"></div>
-                <button onclick="downloadMarkdown()">Download Markdown</button>
+            <!-- Step 2: Character Configuration -->
+            <div class="section" id="characterSection" style="display: none;">
+                <h2>👥 Step 2: Define Your Characters</h2>
+                <div class="character-config">
+                    <div class="character-box">
+                        <h3>Character 1</h3>
+                        <input type="text" id="char1Name" placeholder="Character name (e.g., Sir Gareth)" />
+                        <textarea id="char1Personality" placeholder="Describe their personality, background, and role in the story..." rows="4"></textarea>
+                    </div>
+                    <div class="character-box">
+                        <h3>Character 2</h3>
+                        <input type="text" id="char2Name" placeholder="Character name (e.g., Rogue Elena)" />
+                        <textarea id="char2Personality" placeholder="Describe their personality, background, and role in the story..." rows="4"></textarea>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Step 3: Plan Review & Edit -->
+            <div class="section" id="planSection" style="display: none;">
+                <h2>📋 Step 3: Review & Edit Plan</h2>
+                <div class="result">
+                    <h3>Refined Prompt</h3>
+                    <textarea id="refinedPrompt" rows="4"></textarea>
+                    
+                    <h3>Phase Plan</h3>
+                    <div class="phase-editor">
+                        <div class="phase-box">
+                            <h4>Setup</h4>
+                            <textarea id="phaseSetup" rows="3"></textarea>
+                        </div>
+                        <div class="phase-box">
+                            <h4>Rising Action</h4>
+                            <textarea id="phaseRising" rows="3"></textarea>
+                        </div>
+                        <div class="phase-box">
+                            <h4>Climax</h4>
+                            <textarea id="phaseClimax" rows="3"></textarea>
+                        </div>
+                        <div class="phase-box">
+                            <h4>Resolution</h4>
+                            <textarea id="phaseResolution" rows="3"></textarea>
+                        </div>
+                    </div>
+                    
+                    <h3>Opening Scene</h3>
+                    <textarea id="openingScene" rows="6"></textarea>
+                    
+                    <button onclick="generateStory()">🎬 Generate Full Story</button>
+                </div>
+            </div>
+            
+            <!-- Step 4: Live Story Generation -->
+            <div class="section" id="storySection" style="display: none;">
+                <h2>🎭 Step 4: Live Story Generation</h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <div id="progressText">Ready to generate...</div>
+                
+                <div class="live-updates" id="liveUpdates">
+                    <div class="update-item">Waiting to start story generation...</div>
+                </div>
+                
+                <div class="result" id="finalResult" style="display: none;">
+                    <h3>📚 Final Story</h3>
+                    <div id="storyContent"></div>
+                    <button onclick="downloadMarkdown()">📥 Download Markdown</button>
+                </div>
             </div>
         </div>
         
         <script>
             let currentPlan = null;
             let currentStory = null;
+            let eventSource = null;
             
             async function planStory() {
                 const roughIdea = document.getElementById('roughIdea').value;
@@ -517,18 +784,22 @@ app.get('/', (req, res) => {
                     if (result.error) throw new Error(result.error);
                     
                     currentPlan = result;
-                    document.getElementById('planContent').innerHTML = \`
-                        <p><strong>Refined Prompt:</strong> \${result.refinedPrompt}</p>
-                        <p><strong>Phase Plan:</strong></p>
-                        <ul>
-                            <li><strong>Setup:</strong> \${result.phasePlan.setup}</li>
-                            <li><strong>Rising Action:</strong> \${result.phasePlan.risingAction}</li>
-                            <li><strong>Climax:</strong> \${result.phasePlan.climax}</li>
-                            <li><strong>Resolution:</strong> \${result.phasePlan.resolution}</li>
-                        </ul>
-                        <p><strong>Opening Scene:</strong> \${result.openingScene}</p>
-                    \`;
-                    document.getElementById('planResult').style.display = 'block';
+                    
+                    // Populate editable fields
+                    document.getElementById('refinedPrompt').value = result.refinedPrompt;
+                    document.getElementById('phaseSetup').value = result.phasePlan.setup;
+                    document.getElementById('phaseRising').value = result.phasePlan.risingAction;
+                    document.getElementById('phaseClimax').value = result.phasePlan.climax;
+                    document.getElementById('phaseResolution').value = result.phasePlan.resolution;
+                    document.getElementById('openingScene').value = result.openingScene;
+                    
+                    // Show character configuration
+                    document.getElementById('characterSection').style.display = 'block';
+                    document.getElementById('planSection').style.display = 'block';
+                    
+                    // Scroll to character section
+                    document.getElementById('characterSection').scrollIntoView({ behavior: 'smooth' });
+                    
                 } catch (error) {
                     alert('Error: ' + error.message);
                 }
@@ -540,29 +811,93 @@ app.get('/', (req, res) => {
                     return;
                 }
                 
+                // Get character names and personalities
+                const char1Name = document.getElementById('char1Name').value || 'Char1';
+                const char1Personality = document.getElementById('char1Personality').value || 'A character in the story';
+                const char2Name = document.getElementById('char2Name').value || 'Char2';
+                const char2Personality = document.getElementById('char2Personality').value || 'Another character in the story';
+                
+                // Get updated plan from textareas
+                const updatedPlan = {
+                    refinedPrompt: document.getElementById('refinedPrompt').value,
+                    openingScene: document.getElementById('openingScene').value,
+                    phasePlan: {
+                        setup: document.getElementById('phaseSetup').value,
+                        risingAction: document.getElementById('phaseRising').value,
+                        climax: document.getElementById('phaseClimax').value,
+                        resolution: document.getElementById('phaseResolution').value
+                    },
+                    characters: {
+                        char1: { name: char1Name, personality: char1Personality },
+                        char2: { name: char2Name, personality: char2Personality }
+                    },
+                    totalUtterances: 20,
+                    summaryInterval: 4
+                };
+                
+                // Show story section
+                document.getElementById('storySection').style.display = 'block';
+                document.getElementById('storySection').scrollIntoView({ behavior: 'smooth' });
+                
+                // Clear previous updates
+                document.getElementById('liveUpdates').innerHTML = '<div class="update-item">Starting story generation...</div>';
+                document.getElementById('progressFill').style.width = '0%';
+                document.getElementById('progressText').textContent = 'Initializing...';
+                
                 try {
+                    // Send the story generation request first
                     const response = await fetch('/api/generate-story', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            ...currentPlan,
-                            totalUtterances: 20,
-                            summaryInterval: 4
-                        })
+                        body: JSON.stringify(updatedPlan)
                     });
                     
-                    const result = await response.json();
-                    if (result.error) throw new Error(result.error);
+                    if (!response.ok) {
+                        throw new Error('Failed to start story generation');
+                    }
                     
-                    currentStory = result;
-                    document.getElementById('storyContent').innerHTML = \`
-                        <p><strong>Master Summary:</strong> \${result.data.masterSummary}</p>
-                        <p><strong>Total Conversations:</strong> \${result.data.conversations.length}</p>
-                        <p><strong>Total Summaries:</strong> \${result.data.summaries.length}</p>
-                        <p><strong>Total Narrations:</strong> \${result.data.narrations.length}</p>
-                    \`;
-                    document.getElementById('storyResult').style.display = 'block';
+                    const result = await response.json();
+                    const sessionId = result.sessionId;
+                    
+                    // Start Server-Sent Events for live updates
+                    if (eventSource) eventSource.close();
+                    
+                    eventSource = new EventSource(\`/api/generate-story-stream?sessionId=\${sessionId}\`);
+                    
+                    eventSource.onmessage = function(event) {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'progress') {
+                            document.getElementById('progressFill').style.width = data.percentage + '%';
+                            document.getElementById('progressText').textContent = data.message;
+                        } else if (data.type === 'complete') {
+                            currentStory = data.story;
+                            document.getElementById('progressFill').style.width = '100%';
+                            document.getElementById('progressText').textContent = 'Story generation complete!';
+                            
+                            // Show final result
+                            document.getElementById('storyContent').innerHTML = \`
+                                <p><strong>Master Summary:</strong> \${data.story.data.masterSummary}</p>
+                                <p><strong>Total Conversations:</strong> \${data.story.data.conversations.length}</p>
+                                <p><strong>Total Summaries:</strong> \${data.story.data.summaries.length}</p>
+                                <p><strong>Total Narrations:</strong> \${data.story.data.narrations.length}</p>
+                            \`;
+                            document.getElementById('finalResult').style.display = 'block';
+                            
+                            eventSource.close();
+                        } else if (data.error) {
+                            alert('Error: ' + data.error);
+                            eventSource.close();
+                        }
+                    };
+                    
+                    eventSource.onerror = function() {
+                        eventSource.close();
+                        alert('Connection lost. Please try again.');
+                    };
+                    
                 } catch (error) {
+                    if (eventSource) eventSource.close();
                     alert('Error: ' + error.message);
                 }
             }
