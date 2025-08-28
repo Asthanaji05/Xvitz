@@ -426,7 +426,7 @@ app.post('/api/generate-story', async (req, res) => {
     
     // Generate master summary
     console.log('📚 Generating master summary...');
-    const allSummaries = storyData.summaries.map(s => s.summary).join('\n\n');
+    const allSummaries = storyData.summaries.map(s => s.summary);
     storyData.masterSummary = await generateMasterSummary(allSummaries);
     
     // Generate markdown
