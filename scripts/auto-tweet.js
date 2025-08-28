@@ -14,11 +14,22 @@ const TWITTER_CREDENTIALS = {
 // Create TwitterApi client with optional proxy
 const proxy = process.env.HTTP_PROXY;
 let client;
+// Create TwitterApi client with optional proxy
 if (proxy) {
   const httpAgent = new HttpsProxyAgent(proxy);
-  client = new TwitterApi(TWITTER_CREDENTIALS, { httpAgent }).readWrite;
+  client = new TwitterApi({
+    appKey: process.env.TWITTER_APP_KEY,
+    appSecret: process.env.TWITTER_APP_SECRET,
+    accessToken: process.env.TWITTER_ACCESS_TOKEN,
+    accessSecret: process.env.TWITTER_ACCESS_SECRET,
+  }, { httpAgent }).readWrite;
 } else {
-  client = new TwitterApi(TWITTER_CREDENTIALS).readWrite;
+  client = new TwitterApi({
+    appKey: process.env.TWITTER_APP_KEY,
+    appSecret: process.env.TWITTER_APP_SECRET,
+    accessToken: process.env.TWITTER_ACCESS_TOKEN,
+    accessSecret: process.env.TWITTER_ACCESS_SECRET,
+  }).readWrite;
 }
 
 // Initialize Xvitz agent

@@ -21,25 +21,25 @@ const TWITTER_CREDENTIALS = {
   accessSecret: process.env.TWITTER_ACCESS_SECRET,
 };
 
-// Alternative: Bearer Token (if you have one)
-const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN;
 
 // Create TwitterApi client with optional proxy
-let client;
 if (proxy) {
   const httpAgent = new HttpsProxyAgent(proxy);
-  if (BEARER_TOKEN) {
-    client = new TwitterApi(BEARER_TOKEN, { httpAgent }).readWrite;
-  } else {
-    client = new TwitterApi(TWITTER_CREDENTIALS, { httpAgent }).readWrite;
-  }
+  client = new TwitterApi({
+    appKey: process.env.TWITTER_APP_KEY,
+    appSecret: process.env.TWITTER_APP_SECRET,
+    accessToken: process.env.TWITTER_ACCESS_TOKEN,
+    accessSecret: process.env.TWITTER_ACCESS_SECRET,
+  }, { httpAgent }).readWrite;
 } else {
-  if (BEARER_TOKEN) {
-    client = new TwitterApi(BEARER_TOKEN).readWrite;
-  } else {
-    client = new TwitterApi(TWITTER_CREDENTIALS).readWrite;
-  }
+  client = new TwitterApi({
+    appKey: process.env.TWITTER_APP_KEY,
+    appSecret: process.env.TWITTER_APP_SECRET,
+    accessToken: process.env.TWITTER_ACCESS_TOKEN,
+    accessSecret: process.env.TWITTER_ACCESS_SECRET,
+  }).readWrite;
 }
+
 
 // Initialize Xvitz agent
 const xvitzAgent = new XAgent();
@@ -242,8 +242,6 @@ app.get("/memory", (req, res) => {
 app.get("/diagnose", (req, res) => {
   res.json({
     hasProxy: !!proxy,
-    hasBearerToken: !!BEARER_TOKEN,
-    usingOAuth: !BEARER_TOKEN,
     credentials: {
       hasAppKey: !!TWITTER_CREDENTIALS.appKey,
       hasAppSecret: !!TWITTER_CREDENTIALS.appSecret,
