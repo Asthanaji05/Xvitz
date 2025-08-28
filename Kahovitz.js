@@ -290,13 +290,13 @@ ${conv.text}
 
 ## Segment Summaries
 ${data.summaries.map((summary, index) => `### Summary ${index + 1}
-${summary}
+${summary.summary}
 
 `).join('')}
 
 ## Narrations
 ${data.narrations.map((narration, index) => `### Narration ${index + 1}
-${narration}
+${narration.narration}
 
 `).join('')}
 
