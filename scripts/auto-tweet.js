@@ -82,7 +82,44 @@ function cleanTweetText(text) {
     .substring(0, 280);
 }
 
-// Main auto-tweet function
+// Function to retry with exponential backoff
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      console.log(`❌ Attempt ${attempt} failed:`, error.message);
+      
+      if (error.code === 403) {
+        console.log('🚫 403 Forbidden - likely rate limiting');
+        
+        if (error.rateLimit) {
+          console.log('📊 Rate limit info:', error.rateLimit);
+          
+          if (error.rateLimit.remaining === 0) {
+            console.log('⏳ Rate limit exhausted, waiting for reset...');
+            const resetTime = error.rateLimit.reset * 1000;
+            const waitTime = resetTime - Date.now();
+            if (waitTime > 0) {
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+            continue;
+          }
+        }
+      }
+      
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.log(`⏳ Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
+// Main auto-tweet function with robust error handling
 async function autoTweet() {
   try {
     console.log('🤖 Xvitz Auto-Tweet starting...');
@@ -105,9 +142,11 @@ async function autoTweet() {
     const tweetText = cleanTweetText(generatedContent);
     console.log(`🐦 Generated tweet: "${tweetText}"`);
     
-    // Post to Twitter
+    // Post to Twitter with retry logic
     console.log('🚀 Posting to X (Twitter)...');
-    const tweet = await client.v2.tweet(tweetText);
+    const tweet = await retryWithBackoff(async () => {
+      return await client.v2.tweet(tweetText);
+    });
 
     // Get your account details
     const me = await client.v2.me();
@@ -128,6 +167,12 @@ async function autoTweet() {
     
   } catch (error) {
     console.error('❌ Error in auto-tweet:', error);
+    
+    // Provide helpful error information
+    if (error.code === 403) {
+     console.log("403 error")
+    }
+    
     throw error;
   }
 }
