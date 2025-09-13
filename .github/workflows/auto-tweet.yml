@@ -1,9 +1,9 @@
 name: Auto Tweet with Xvitz
 
 on:
-  schedule:
-    # Run every 6 hours (UTC time)
-    - cron: '30 0 * * *'
+  # schedule:
+  #   # Run every 6 hours (UTC time)
+  #   - cron: '30 0 * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
